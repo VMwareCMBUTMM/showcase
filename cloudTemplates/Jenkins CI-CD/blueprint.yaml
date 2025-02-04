@@ -1,0 +1,109 @@
+formatVersion: 2
+name: Jenkins CI-CD
+version: 1
+outputs:
+  __deploymentOverview:
+    value: |-
+
+      ### Jenkins Application 
+
+      Jenkins is an open source continuous integration/continuous delivery and deployment (CI/CD) automation software DevOps tool written in the Java programming language. It is used to implement CI/CD workflows, called pipelines.
+
+      ### Application URL
+
+      - Jenkins URL - http://${resource.Jenkins.networks[0].address}:8080
+
+      ### Unlock Jenkins 
+        
+      Login to Jenkins via 
+          
+          ssh ${input.username}@${resource.Jenkins.networks[0].address}
+
+      Obtain the Initial password via 
+          
+          sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+inputs:
+  username:
+    type: string
+    description: The username you would like <br> to use for the installation.
+    default: demouser
+    title: SSH Username
+  password:
+    type: string
+    description: The password you would like <br> to use for the installation.
+    title: SSH Password
+    pattern: '[a-z0-9A-Z@#$]+'
+    encrypted: true
+    default: VMware1!
+resources:
+  Jenkins:
+    type: Cloud.vSphere.Machine
+    properties:
+      name: jen
+      flavor: medium
+      image: ubuntu-22.04
+      tags:
+        - key: project
+          value: ${env.projectName}
+        - key: cost_center
+          value: engineering
+      constraints:
+        - tag: env:vcf
+      cloudConfig: |
+        #cloud-config      
+        package_update: true
+        package_upgrade: true
+
+        ssh_pwauth: yes
+
+        users:
+          - default
+          - name: ${input.username}
+            lock_passwd: false
+            sudo: ALL=(ALL) NOPASSWD:ALL
+            groups: wheel, sudo, admin
+            shell: /bin/bash
+
+        chpasswd:
+          users:
+            - name: ${input.username}
+              password: ${input.password}
+              type: text
+          expire: false
+              
+        write_files:
+          - path: /etc/hosts
+            content: 127.0.0.1 ${self.resourceName}
+            append: true
+            
+        runcmd:
+          - hostnamectl set-hostname ${self.resourceName}
+          
+          ### Step 1 – Install Java ###
+          - apt-get update -y          
+          - apt-get install fontconfig openjdk-17-jre -y
+
+          ### Step 2 – Install Jenkins ###
+          
+          - wget -O /usr/share/keyrings/jenkins-keyring.asc https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+          - echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" | tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+          - apt-get update -y
+          - apt-get install jenkins -y
+
+          
+          ### Step 3 – Starting Jenkins ###
+          
+          - systemctl enable jenkins
+          - systemctl start jenkins
+
+          ### Step 4 –  Allow Firewall ###
+          
+          - ufw allow 8080
+      networks:
+        - network: ${resource.Cloud_Network_1.id}
+  Cloud_Network_1:
+    type: Cloud.Network
+    properties:
+      networkType: existing
+      constraints:
+        - tag: env:vcf
