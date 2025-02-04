@@ -1,0 +1,96 @@
+name: Multiple Virtual Machines - Multiple Disks
+version: 1
+formatVersion: 1
+inputs:
+  location:
+    type: string
+    description: Target Environment
+    default: env:vcf
+    oneOf:
+      - title: VCF (VMware Cloud Foundation)
+        const: env:vcf
+  size:
+    type: string
+    default: small
+    enum:
+      - small
+      - medium
+      - large
+  image:
+    type: string
+    default: ubuntu-24.04
+    oneOf:
+      - title: Linux
+        const: ubuntu-24.04
+      - title: Windows
+        const: WIN2K22
+  numVms:
+    type: integer
+    title: Number of VMs
+    minimum: 1
+    maximum: 5
+    default: 1
+  diskConfig:
+    type: array
+    title: Add Additional Disks
+    minItems: 0
+    maxItems: 5
+    items:
+      type: object
+      properties:
+        controller:
+          type: string
+          title: SCSI Controller
+          enum:
+            - SCSI_Controller_0
+            - SCSI_Controller_1
+            - SCSI_Controller_2
+            - SCSI_Controller_3
+          default: SCSI_Controller_0
+        unit:
+          type: integer
+          title: Disk Order
+          maximum: 4
+          minimum: 1
+        size:
+          type: number
+          title: Size GB
+          default: 5
+          maximum: 200
+        drive:
+          type: string
+          title: Mountpoint/Drive Letter
+        label:
+          type: string
+          title: Disk Label
+resources:
+  vm:
+    type: Cloud.vSphere.Machine
+    allocatePerInstance: true
+    properties:
+      name: vm
+      count: ${input.numVms}
+      image: ${input.image}
+      flavor: ${input.size}
+      constraints:
+        - tag: ${input.location}
+      attachedDisks: ${map_to_object(slice(resource.vmdisk[*].id, length(input.diskConfig) * count.index, length(input.diskConfig) * (count.index +1)), "source")}
+      networks:
+        - network: ${resource.Cloud_vSphere_Network_1.id}
+  vmdisk:
+    type: Cloud.vSphere.Disk
+    allocatePerInstance: true
+    properties:
+      count: ${input.numVms * length(input.diskConfig)}
+      capacityGb: ${input.diskConfig[count.index % length(input.diskConfig)].size}
+      name: ${input.diskConfig[count.index % length(input.diskConfig)].label}
+      SCSIController: ${input.diskConfig[count.index % length(input.diskConfig)].controller}
+      unitNumber: ${to_string(input.diskConfig[count.index % length(input.diskConfig)].unit)}
+      drive: ${to_string(input.diskConfig[count.index % length(input.diskConfig)].drive)}
+      label: ${to_string(input.diskConfig[count.index % length(input.diskConfig)].label)}
+  Cloud_vSphere_Network_1:
+    type: Cloud.vSphere.Network
+    properties:
+      networkType: existing
+      constraints:
+        - tag: ${input.location}
