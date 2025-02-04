@@ -1,0 +1,84 @@
+formatVersion: 1
+name: Ubuntu Linux Server
+version: 1
+inputs:
+  username:
+    type: string
+    description: The username you would like <br> to use for the installation.
+    default: demouser
+    title: SSH Username
+  password:
+    type: string
+    description: The password you would like <br> to use for the installation.
+    default: VMware1!
+    title: SSH Password
+    pattern: '[a-z0-9A-Z@#$]+'
+    encrypted: true
+    
+  ubuntu_version:
+    type: string
+    title: Ubuntu Version
+    description: Select Your Ubuntu Version
+    oneOf:
+      - title: Ubuntu 18.04
+        const: ubuntu-18.04
+      - title: Ubuntu 20.04
+        const: ubuntu-20.04
+      - title: Ubuntu 22.04
+        const: ubuntu-22.04
+      - title: Ubuntu 24.04
+        const: ubuntu-24.04
+resources:
+  Ubuntu:
+    type: Cloud.vSphere.Machine
+    properties:
+      name: ubuntu
+      flavor: medium
+      image: ${input.ubuntu_version}
+      remoteAccess:
+        authentication: usernamePassword
+        username: ${input.username}
+        password: ${input.password}
+      tags:
+        - key: project
+          value: ${env.projectName}
+        - key: cost_center
+          value: engineering
+      constraints:
+        - tag: env:vcf
+      cloudConfig: |
+        hostname: ${self.resourceName}
+        package_upgrade: true
+        package_reboot_if_required: true
+        apt_source:
+          - source: deb http://archive.ubuntu.com/ubuntu main universe multiverse restricted
+        
+        ssh_pwauth: yes
+          
+        users:
+          - default
+          - name: ${input.username}
+            lock_passwd: false
+            sudo: ['ALL=(ALL) NOPASSWD:ALL']
+            groups: [wheel, sudo, admin]
+            shell: '/bin/bash'
+        
+        chpasswd:
+          list: |
+            ${input.username}:${input.password}
+          expire: false
+            
+        write_files:
+          - path: /etc/hosts
+            content: 127.0.0.1 ${self.resourceName}
+            append: true
+            
+      networks:
+        - network: ${resource.Cloud_Network_1.id}
+
+  Cloud_Network_1:
+    type: Cloud.Network
+    properties:
+      networkType: existing
+      constraints:
+        - tag: env:vcf
