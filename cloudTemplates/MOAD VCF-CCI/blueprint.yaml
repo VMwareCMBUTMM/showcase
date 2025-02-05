@@ -1,6 +1,6 @@
 formatVersion: 2
 name: MOAD VCF-CCI
-version: 1
+version: 2
 metadata:
   deploymentSettings:
     disableUpdateDay2Action: true
@@ -21,7 +21,7 @@ outputs:
 
       Login to Kubernetes via
 
-          kubectl cci login -s vcf-auto.corp.vmbeans.com -u ${env.requestedBy} --insecure-skip-tls-verify --project ${env.projectName} --tanzu-kubernetes-cluster-namespace ${input.namespace_Name} --tanzu-kubernetes-cluster-name ${input.tkg_Name}
+          kubectl cci login -s lvn-m01-auto.showcase.tmm.broadcom.lab -u ${env.requestedBy} --insecure-skip-tls-verify --project ${env.projectName} --tanzu-kubernetes-cluster-namespace ${input.namespace_Name} --tanzu-kubernetes-cluster-name ${input.tkg_Name}
           
           
       Manage Kubernetes and Supervisor Namespace via [Cloud Consumption Interface](/automation/#/service/catalog/consume/cci/projects/${env.projectName}/namespaces/${resource.Namespace.name}/summary)
@@ -87,13 +87,13 @@ inputs:
     title: Region
     description: Select a Region.
     enum:
-      - tmm-us-west
+      - lvn
   class_Name:
     type: string
     title: Supervisor Namespace Class
     description: Select a Supervisor Namespace Class.
     enum:
-      - moad-default
+      - showcase-default
   vm_class_Name:
     type: string
     title: MySQL Virtual Machine Class (Size)
@@ -110,6 +110,12 @@ inputs:
     title: MySQL Virtual Machine Name
     description: ' Enter a name for the MySQL Virtual Machine'
 resources:
+  Namespace:
+    type: CCI.Supervisor.Namespace
+    properties:
+      name: ${input.namespace_Name}
+      className: ${input.class_Name}
+      regionName: ${input.region_Name}
   TKG:
     type: CCI.Supervisor.Resource
     properties:
@@ -138,13 +144,13 @@ resources:
             variables:
               - name: storageClasses
                 value:
-                  - tmm-kubernetes-storage-policy
+                  - lvn-w01a-cluster-002-optimal-datastore-default-policy-raid1-cci
               - name: defaultStorageClass
-                value: tmm-kubernetes-storage-policy
+                value: lvn-w01a-cluster-002-optimal-datastore-default-policy-raid1-cci
               - name: vmClass
                 value: ${input.controlPlaneVmClassName}
               - name: storageClass
-                value: tmm-kubernetes-storage-policy
+                value: lvn-w01a-cluster-002-optimal-datastore-default-policy-raid1-cci
             controlPlane:
               replicas: ${input.controlPlaneCount}
               metadata:
@@ -162,34 +168,6 @@ resources:
                     overrides:
                       - name: vmClass
                         value: ${input.workerVmClassName}
-  DB_SSH_SVC:
-    type: CCI.Supervisor.Resource
-    dependsOn:
-      - MySQL
-    properties:
-      context: ${resource.Namespace.id}
-      wait:
-        fields:
-          - path: status.loadBalancer.ingress[0].ip
-            value: '*'
-      manifest:
-        apiVersion: vmoperator.vmware.com/v1alpha1
-        kind: VirtualMachineService
-        metadata:
-          name: ${input.vm_Name}-lb
-        spec:
-          selector:
-            vm-lb-selector: ${input.vm_Name}-lb
-          type: LoadBalancer
-          ports:
-            - name: ssh
-              protocol: TCP
-              port: 22
-              targetPort: 22
-            - name: mysql
-              protocol: TCP
-              port: 3306
-              targetPort: 3306
   opencart-ns:
     type: CCI.TKG.Resource
     dependsOn:
@@ -203,23 +181,6 @@ resources:
           labels:
             pod-security.kubernetes.io/enforce: privileged
           name: opencart
-  Allow_Pods:
-    type: CCI.TKG.Resource
-    properties:
-      context: ${resource.TKG.id}
-      manifest:
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: ClusterRoleBinding
-        metadata:
-          name: default-tkg-admin-privileged-binding
-        roleRef:
-          apiGroup: rbac.authorization.k8s.io
-          kind: ClusterRole
-          name: psp:vmware-system-privileged
-        subjects:
-          - apiGroup: rbac.authorization.k8s.io
-            kind: Group
-            name: system:authenticated
   PVC:
     type: CCI.TKG.Resource
     properties:
@@ -238,7 +199,7 @@ resources:
           resources:
             requests:
               storage: 8Gi
-          storageClassName: tmm-kubernetes-storage-policy
+          storageClassName: lvn-w01a-cluster-002-optimal-datastore-default-policy-raid1-cci
   OC_Pass:
     type: CCI.TKG.Resource
     properties:
@@ -255,28 +216,6 @@ resources:
           name: my-open-cart-opencart
           namespace: default
         type: Opaque
-  MySQL:
-    type: CCI.Supervisor.Resource
-    dependsOn:
-      - CloudInit
-    properties:
-      context: ${resource.Namespace.id}
-      manifest:
-        apiVersion: vmoperator.vmware.com/v1alpha1
-        kind: VirtualMachine
-        metadata:
-          name: ${input.vm_Name}
-          labels:
-            vm-selector: ${input.vm_Name}
-            vm-lb-selector: ${input.vm_Name}-lb
-        spec:
-          className: ${input.vm_class_Name}
-          imageName: vmi-a05c58528a1c0d589
-          storageClass: tmm-kubernetes-storage-policy
-          powerState: poweredOn
-          vmMetadata:
-            secretName: ${input.vm_Name}-bootstrap-secret
-            transport: CloudInit
   WEB_SVC:
     type: CCI.TKG.Resource
     properties:
@@ -309,69 +248,6 @@ resources:
             app.kubernetes.io/instance: my-open-cart
             app.kubernetes.io/name: opencart
           type: LoadBalancer
-  CloudInit:
-    type: CCI.Supervisor.Resource
-    properties:
-      context: ${resource.Namespace.id}
-      manifest:
-        apiVersion: v1
-        kind: Secret
-        metadata:
-          name: ${input.vm_Name}-bootstrap-secret
-          labels:
-            vm-selector: ${input.vm_Name}
-        stringData:
-          user-data: |
-            #cloud-config
-            repo_update: true
-            repo_upgrade: all
-            apt_source:
-              - source: deb http://archive.ubuntu.com/ubuntu main universe multiverse restricted
-            packages:
-              - mysql-server-5.7
-              - mysql-client
-              - unzip
-              - open-vm-tools
-            users:
-              - name: demouser
-                sudo: ['ALL=(ALL) NOPASSWD:ALL']
-                groups: sudo
-                shell: /bin/bash
-                ssh_authorized_keys:
-                  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCpAaAZx2UOwv4ECxDLNvwlZBjVLED4IrVmJdE8fUQedL4F6+VTbmv+MjWYbUVEY6DdCQxyOCZ0ApM1Rve9BozBcIzykm0h9oagXbWmcVmcAnuez1pk2jApGtvqqvjuJNZ0WzpRki6rwhV3GMjKBOP9OUi8IUl3pQpW9YlvpEFTU37lELXFTSP6Xey2VK9/RjVf2HvaX8PRMeYvxKRyz7gaXRGfpFRZJKoOAKLMhNCzTqPA1x3wPpQyJz+ljQwBHSt8vv0T4JdRW8DgJMMaUHLEvpCKmI8gNhyZatnAwsiAMdo2MrkVIaz6vTrfp4Am5zFmqoi8HnEEWi3MKlqiOaB1 rsa-key-20240210
-              - name: ocuser
-                sudo: ['ALL=(ALL) NOPASSWD:ALL']
-                groups: sudo
-                shell: /bin/bash
-            write_files:
-              - path: /etc/cron.hourly/oc_cleanup
-                owner: root
-                permissions: '0777'
-                content: "mysql -e 'use opencart; create table oc_session_copy like oc_session; drop table oc_session; rename table oc_session_copy to     oc_session;'"
-              - path: /etc/hosts
-                content: 127.0.0.1 oc-mysql
-                append: true
-            runcmd:
-              - export DEBIAN_FRONTEND=noninteractive
-              - USER=ocuser
-              - PASS=VMware1!
-              - hostnamectl set-hostname ${input.vm_Name}
-              - echo "mysql-server-5.7 mysql-server/root_password password root" | sudo debconf-set-selections
-              - echo "mysql-server-5.7 mysql-server/root_password_again password root" | sudo debconf-set-selections
-              - echo "[client]" >> /etc/mysql/mysql.conf.d/mysqld.cnf
-              - echo "user=root" >> /etc/mysql/mysql.conf.d/mysqld.cnf
-              - echo "password=root" >> /etc/mysql/mysql.conf.d/mysqld.cnf
-              - echo "user=ocuser" >> /etc/mysql/mysql.conf.d/mysqld.cnf
-              - echo "password=$PASS" >> /etc/mysql/mysql.conf.d/mysqld.cnf
-              - sed -i 's/#slow/slow/g' /etc/mysql/mysql.conf.d/mysqld.cnf
-              - sed -i 's/#long_query_time/long_query_time/g' /etc/mysql/mysql.conf.d/mysqld.cnf
-              - sed -i 's/bind-address/#bind-address/g' /etc/mysql/mysql.conf.d/mysqld.cnf
-              - systemctl restart mysql
-              - mysql -u root -e "GRANT ALL ON *.* TO '$USER'@'%' IDENTIFIED BY '$PASS'"
-              - mysql -u root -e 'CREATE DATABASE opencart'
-              - mysql -u root -e 'USE opencart'
-              - mysql -u root -e 'flush privileges'
-              - echo 'Cloud-init is done!' >> /tmp/finished.txt
   DB_Pass:
     type: CCI.TKG.Resource
     properties:
@@ -388,12 +264,6 @@ resources:
           name: my-open-cart-opencart-externaldb
           namespace: default
         type: Opaque
-  Namespace:
-    type: CCI.Supervisor.Namespace
-    properties:
-      name: ${input.namespace_Name}
-      className: ${input.class_Name}
-      regionName: ${input.region_Name}
   Front_End:
     type: CCI.TKG.Resource
     dependsOn:
@@ -482,7 +352,7 @@ resources:
                           name: my-open-cart-opencart
                     - name: OPENCART_EMAIL
                       value: user@example.com
-                  image:  dsm-docker-virtual.usw5.packages.broadcom.com/bitnami/opencart:4.0.1-1-debian-11-r66
+                  image: dsm-docker-virtual.usw5.packages.broadcom.com/bitnami/opencart:4.0.1-1-debian-11-r66
                   imagePullPolicy: IfNotPresent
                   livenessProbe:
                     failureThreshold: 6
@@ -548,3 +418,133 @@ resources:
                 - name: opencart-data
                   persistentVolumeClaim:
                     claimName: my-open-cart-opencart-opencart
+  Allow_Pods:
+    type: CCI.TKG.Resource
+    properties:
+      context: ${resource.TKG.id}
+      manifest:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: default-tkg-admin-privileged-binding
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: psp:vmware-system-privileged
+        subjects:
+          - apiGroup: rbac.authorization.k8s.io
+            kind: Group
+            name: system:authenticated
+  DB_SSH_SVC:
+    type: CCI.Supervisor.Resource
+    dependsOn:
+      - MySQL
+    properties:
+      context: ${resource.Namespace.id}
+      wait:
+        fields:
+          - path: status.loadBalancer.ingress[0].ip
+            value: '*'
+      manifest:
+        apiVersion: vmoperator.vmware.com/v1alpha1
+        kind: VirtualMachineService
+        metadata:
+          name: ${input.vm_Name}-lb
+        spec:
+          selector:
+            vm-lb-selector: ${input.vm_Name}-lb
+          type: LoadBalancer
+          ports:
+            - name: ssh
+              protocol: TCP
+              port: 22
+              targetPort: 22
+            - name: mysql
+              protocol: TCP
+              port: 3306
+              targetPort: 3306
+  MySQL:
+    type: CCI.Supervisor.Resource
+    dependsOn:
+      - CloudInit
+    properties:
+      context: ${resource.Namespace.id}
+      manifest:
+        apiVersion: vmoperator.vmware.com/v1alpha1
+        kind: VirtualMachine
+        metadata:
+          name: ${input.vm_Name}
+          labels:
+            vm-selector: ${input.vm_Name}
+            vm-lb-selector: ${input.vm_Name}-lb
+        spec:
+          className: ${input.vm_class_Name}
+          imageName: vmi-ddb5f4172755581fa
+          storageClass: lvn-w01a-cluster-002-optimal-datastore-default-policy-raid1-cci
+          powerState: poweredOn
+          vmMetadata:
+            secretName: ${input.vm_Name}-bootstrap-secret
+            transport: CloudInit
+  CloudInit:
+    type: CCI.Supervisor.Resource
+    properties:
+      context: ${resource.Namespace.id}
+      manifest:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: ${input.vm_Name}-bootstrap-secret
+          labels:
+            vm-selector: ${input.vm_Name}
+        stringData:
+          user-data: |
+            #cloud-config
+            repo_update: true
+            repo_upgrade: all
+            apt_source:
+              - source: deb http://archive.ubuntu.com/ubuntu main universe multiverse restricted
+            packages:
+              - mysql-server-5.7
+              - mysql-client
+              - unzip
+              - open-vm-tools
+            users:
+              - name: demouser
+                sudo: ['ALL=(ALL) NOPASSWD:ALL']
+                groups: sudo
+                shell: /bin/bash
+                ssh_authorized_keys:
+                  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCpAaAZx2UOwv4ECxDLNvwlZBjVLED4IrVmJdE8fUQedL4F6+VTbmv+MjWYbUVEY6DdCQxyOCZ0ApM1Rve9BozBcIzykm0h9oagXbWmcVmcAnuez1pk2jApGtvqqvjuJNZ0WzpRki6rwhV3GMjKBOP9OUi8IUl3pQpW9YlvpEFTU37lELXFTSP6Xey2VK9/RjVf2HvaX8PRMeYvxKRyz7gaXRGfpFRZJKoOAKLMhNCzTqPA1x3wPpQyJz+ljQwBHSt8vv0T4JdRW8DgJMMaUHLEvpCKmI8gNhyZatnAwsiAMdo2MrkVIaz6vTrfp4Am5zFmqoi8HnEEWi3MKlqiOaB1 rsa-key-20240210
+              - name: ocuser
+                sudo: ['ALL=(ALL) NOPASSWD:ALL']
+                groups: sudo
+                shell: /bin/bash
+            write_files:
+              - path: /etc/cron.hourly/oc_cleanup
+                owner: root
+                permissions: '0777'
+                content: "mysql -e 'use opencart; create table oc_session_copy like oc_session; drop table oc_session; rename table oc_session_copy to     oc_session;'"
+              - path: /etc/hosts
+                content: 127.0.0.1 oc-mysql
+                append: true
+            runcmd:
+              - export DEBIAN_FRONTEND=noninteractive
+              - USER=ocuser
+              - PASS=VMware1!
+              - hostnamectl set-hostname ${input.vm_Name}
+              - echo "mysql-server-5.7 mysql-server/root_password password root" | sudo debconf-set-selections
+              - echo "mysql-server-5.7 mysql-server/root_password_again password root" | sudo debconf-set-selections
+              - echo "[client]" >> /etc/mysql/mysql.conf.d/mysqld.cnf
+              - echo "user=root" >> /etc/mysql/mysql.conf.d/mysqld.cnf
+              - echo "password=root" >> /etc/mysql/mysql.conf.d/mysqld.cnf
+              - echo "user=ocuser" >> /etc/mysql/mysql.conf.d/mysqld.cnf
+              - echo "password=$PASS" >> /etc/mysql/mysql.conf.d/mysqld.cnf
+              - sed -i 's/#slow/slow/g' /etc/mysql/mysql.conf.d/mysqld.cnf
+              - sed -i 's/#long_query_time/long_query_time/g' /etc/mysql/mysql.conf.d/mysqld.cnf
+              - sed -i 's/bind-address/#bind-address/g' /etc/mysql/mysql.conf.d/mysqld.cnf
+              - systemctl restart mysql
+              - mysql -u root -e "GRANT ALL ON *.* TO '$USER'@'%' IDENTIFIED BY '$PASS'"
+              - mysql -u root -e 'CREATE DATABASE opencart'
+              - mysql -u root -e 'USE opencart'
+              - mysql -u root -e 'flush privileges'
+              - echo 'Cloud-init is done!' >> /tmp/finished.txt
