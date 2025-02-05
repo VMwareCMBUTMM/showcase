@@ -24,7 +24,7 @@ outputs:
 
       Login to Kubernetes via
 
-          kubectl cci login -s vcf-auto.corp.vmbeans.com -u ${env.requestedBy} --insecure-skip-tls-verify --project ${env.projectName} --tanzu-kubernetes-cluster-namespace ${input.namespace_Name} --tanzu-kubernetes-cluster-name ${input.tkg_Name}
+          kubectl cci login -s lvn-m01-auto.showcase.tmm.broadcom.lab -u ${env.requestedBy} --insecure-skip-tls-verify --project ${env.projectName} --tanzu-kubernetes-cluster-namespace ${input.namespace_Name} --tanzu-kubernetes-cluster-name ${input.tkg_Name}
           
           
       Manage Kubernetes and Supervisor Namespace via [Cloud Consumption Interface](/automation/#/service/catalog/consume/cci/projects/${env.projectName}/namespaces/${resource.Namespace.name}/summary)
@@ -90,13 +90,13 @@ inputs:
     title: Region
     description: Select a Region.
     enum:
-      - tmm-us-west
+      - lvn
   class_Name:
     type: string
     title: Supervisor Namespace Class
     description: Select a Supervisor Namespace Class.
     enum:
-      - moad-default
+      - showcase-default
 resources:
   Namespace:
     type: CCI.Supervisor.Namespace
