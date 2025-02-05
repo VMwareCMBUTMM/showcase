@@ -1,23 +1,23 @@
 formatVersion: 1
 name: Web Servers
-version: 1
+version: 2
 inputs:
   username:
     type: string
     title: Username
-    description: Username
+    description: Create a username
     default: demouser
   password:
     type: string
     title: Password
     default: VMware1!
     encrypted: true
-    description: Password for the given username
+    description: Set a password for the username
   count:
     type: integer
     title: How many servers ?
     default: 1
-    description: how many servers should be deployed ?
+    description: How many servers should be deployed?
   env:
     type: string
     title: Deployment Environment
@@ -29,6 +29,16 @@ inputs:
         const: env:pai
       - title: SA
         const: env:sa
+  net:
+    type: string
+    title: Network Type
+    description: Select a network type to deploy the web servers on.
+    default: env:vcf
+    oneOf:
+      - title: Existing Network
+        const: env:vcf
+      - title: On-Demand Network
+        const: env:moad-nsx-web
   osMonitoring:
     type: boolean
     title: Enable OS/APP Monitoring
@@ -43,14 +53,13 @@ resources:
       name: web
       count: ${input.count}
       flavor: small
-      image: ubuntu-18.04-server-cloudimg-amd64
+      image: ubuntu-18.04
       remoteAccess:
         authentication: usernamePassword
         username: ${input.username}
         password: ${input.password}
       constraints:
         - tag: ${input.env}
-      #imageRef: https://cloud-images.ubuntu.com/releases/18.04/release/ubuntu-18.04-server-cloudimg-amd64.ova
       cloudConfig: |
         hostname: ${self.resourceName}
         manage_resolv_conf: true
@@ -121,6 +130,6 @@ resources:
     type: Cloud.NSX.Network
     properties:
       name: web-net
-      networkType: routed
+      networkType: ${input.net == "env:vcf" ? "existing" :"routed"}
       constraints:
-        - tag: env:moad-nsx-web
+        - tag: ${input.net}
