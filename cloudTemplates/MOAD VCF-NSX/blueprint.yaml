@@ -1,6 +1,6 @@
 formatVersion: 1
 name: MOAD VCF-NSX
-version: 1
+version: 2
 inputs:
   frontendcount:
     title: 'No. of Frontend Workloads:'
@@ -142,26 +142,42 @@ resources:
           - php-xmlrpc
           - mysql-server-5.7
           - unzip
+          - open-vm-tools
 
+        ssh_pwauth: true
 
         users:
           - name: ${input.username}
-            sudo: ['ALL=(ALL) NOPASSWD:ALL']
-            groups: sudo
+            lock_passwd: false
+            sudo: ALL=(ALL) NOPASSWD:ALL
+            groups: [sudo]
             shell: /bin/bash
+          
           - name: ocuser
-            sudo: ['ALL=(ALL) NOPASSWD:ALL']
-            groups: sudo
+            lock_passwd: false
+            sudo: ALL=(ALL) NOPASSWD:ALL
+            groups: [wheel, sudo, admin]
             shell: /bin/bash
+
+        chpasswd:
+          users:
+            - name: ${input.username}
+              password: ${input.password}
+              type: text
+          expire: false
 
         write_files:
           - path: /etc/cron.hourly/oc_web_cleanup
             owner: root
             permissions: '0777'
-            content: "mysql -u ocuser -h ${resource.mysql.address} -e 'source /var/www/opencart/install/opencart.sql'"
+            content: "mysql -u ocuser -h ${resource.mySQL.address} -e 'source /var/www/opencart/install/opencart.sql'"
             
           - path: /etc/hosts
-            content: 127.0.0.1 ${self.resourceName}
+            content: |
+              127.0.0.1 ${self.resourceName}
+              10.138.241.6 lvn-sc-www.showcase.tmm.broadcom.lab
+              10.138.216.173 lvn-m01-ops.showcase.tmm.broadcom.lab
+              10.138.216.130 lvn-m01-logs.showcase.tmm.broadcom.lab
             append: true
 
         runcmd:
@@ -170,8 +186,8 @@ resources:
           - PASS=${input.password}
           - echo $USER:$PASS | /usr/sbin/chpasswd
           - echo ${input.username}:$PASS | /usr/sbin/chpasswd
-          - sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
-          - service ssh reload
+          #- sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
+          #- service ssh reload
           #- hostnamectl set-hostname ${self.resourceName}
           - wget -P /tmp/ http://lvn-sc-www.showcase.tmm.broadcom.lab/downloads/opencart-demo.zip
           - unzip -d /tmp /tmp/opencart-demo.zip
@@ -237,7 +253,6 @@ resources:
     properties:
       osUsername: ${input.username}
       osPassword: ${input.password}
-      customizationSpec: moad
       agent: ${input.osMonitoring == true ? "telegraf" :""}
       service: mysql
       name: oc-db
@@ -256,8 +271,9 @@ resources:
           securityGroups:
             - ${resource["OC-MySQL-Cloud-Sec-Grp"].id}
       cloudConfig: |
-        repo_update: true
-        repo_upgrade: all
+        hostname: ${self.resourceName}
+        package_upgrade: true
+        package_reboot_if_required: true
         apt_source:
           - source: deb http://archive.ubuntu.com/ubuntu main universe multiverse restricted
 
@@ -265,36 +281,57 @@ resources:
           - mysql-server-5.7
           - mysql-client
           - unzip
+          - open-vm-tools
 
+        ssh_pwauth: true
 
         users:
           - name: ${input.username}
-            sudo: ['ALL=(ALL) NOPASSWD:ALL']
-            groups: sudo
+            lock_passwd: false
+            sudo: ALL=(ALL) NOPASSWD:ALL
+            groups: wheel, sudo, admin
             shell: /bin/bash
           - name: ocuser
-            sudo: ['ALL=(ALL) NOPASSWD:ALL']
-            groups: sudo
+            lock_passwd: false
+            sudo: ALL=(ALL) NOPASSWD:ALL
+            groups: wheel, sudo, admin
             shell: /bin/bash
+
+        chpasswd:
+          expire: false
+          users:
+            - name: ${input.username}
+              password: ${input.password}
+              type: text
+            - name: ocuser
+              password: ${input.password}
+              type: text
 
         write_files:
           - path: /etc/cron.hourly/oc_cleanup
             owner: root
             permissions: '0777'
             content: "mysql -e 'use opencart; create table oc_session_copy like oc_session; drop table oc_session; rename table oc_session_copy to oc_session;'"
+          
           - path: /etc/hosts
-            content: 127.0.0.1 ${self.name}
+            content: |
+              127.0.0.1 ${self.resourceName}
+              10.138.241.6 lvn-sc-www.showcase.tmm.broadcom.lab
+              10.138.216.173 lvn-m01-ops.showcase.tmm.broadcom.lab
+              10.138.216.130 lvn-m01-logs.showcase.tmm.broadcom.lab
             append: true
 
         runcmd:
           - export DEBIAN_FRONTEND=noninteractive
           - USER=ocuser
           - PASS=${input.password}
-          - echo $USER:$PASS | /usr/sbin/chpasswd
-          - echo ${input.username}:$PASS | /usr/sbin/chpasswd
-          - sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
-          - service ssh reload
-          - hostnamectl set-hostname ${self.resourceName}
+          #- echo $USER:$PASS | /usr/sbin/chpasswd
+          #- echo ${input.username}:$PASS | /usr/sbin/chpasswd
+          #- sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
+          #- service ssh reload
+          #- hostnamectl set-hostname ${self.resourceName}
+            #----------------------- Install SQL Server if not already installed  -------------------------#
+          - systemctl list-units --type=service | grep mysql.service || apt-get install -y mysql-server-5.7 mysql-client unzip open-vm-tools
           - echo "mysql-server-5.7 mysql-server/root_password password root" | sudo debconf-set-selections
           - echo "mysql-server-5.7 mysql-server/root_password_again password root" | sudo debconf-set-selections
           - echo "[client]" >> /etc/mysql/mysql.conf.d/mysqld.cnf
