@@ -170,7 +170,7 @@ resources:
           - path: /etc/cron.hourly/oc_web_cleanup
             owner: root
             permissions: '0777'
-            content: "mysql -u ocuser -h ${resource.mySQL.address} -e 'source /var/www/opencart/install/opencart.sql'"
+            content: "mysql -u ocuser -h ${resource.mysql.address} -e 'source /var/www/opencart/install/opencart.sql'"
             
           - path: /etc/hosts
             content: |
