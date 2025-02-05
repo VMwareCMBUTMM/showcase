@@ -1,6 +1,6 @@
 formatVersion: 1
 name: MOAD VCF-NSX
-version: 3
+version: 4
 inputs:
   frontendcount:
     title: 'No. of Frontend Workloads:'
@@ -106,7 +106,7 @@ resources:
       name: oc-web
       flavor: medium
       count: ${input.frontendcount}
-      image: ubuntu-18.04-server-cloudimg-amd64
+      image: ubuntu-18.04
       tags:
         - key: project
           value: ${env.projectName}
@@ -257,7 +257,7 @@ resources:
       service: mysql
       name: oc-db
       flavor: medium
-      image: ubuntu-18.04-server-cloudimg-amd64
+      image: ubuntu-18.04
       tags:
         - key: project
           value: ${env.projectName}
