@@ -15,7 +15,7 @@ resources:
   WinSrv:
     type: Cloud.vSphere.Machine
     properties:
-      customizationSpec: aria-config-windows
+      #customizationSpec: aria-config-windows
       name: winsrv
       flavor: small
       image: ${input.windows_version}
