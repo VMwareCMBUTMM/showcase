@@ -1,0 +1,40 @@
+formatVersion: 1
+name: Microsoft Windows Server
+version: 1
+inputs:
+  windows_version:
+    type: string
+    title: Windows Version
+    description: Select Your Windows Version
+    oneOf:
+      - title: Windows Server 2019
+        const: WIN2K19
+      - title: Windows Server 2022
+        const: WIN2K22
+resources:
+  WinSrv:
+    type: Cloud.vSphere.Machine
+    properties:
+      #customizationSpec: aria-config-windows
+      name: winsrv
+      flavor: small
+      image: ${input.windows_version}
+      remoteAccess:
+        authentication: usernamePassword
+        username: administrator
+        password: ${secret.windows-administrator-password}
+      tags:
+        - key: project
+          value: ${env.projectName}
+        - key: cost_center
+          value: engineering
+      networks:
+        - network: ${resource.Cloud_Network_1.id}
+      constraints:
+        - tag: env:vcf
+  Cloud_Network_1:
+    type: Cloud.Network
+    properties:
+      networkType: existing
+      constraints:
+        - tag: env:vcf
