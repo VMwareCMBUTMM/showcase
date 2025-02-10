@@ -1,13 +1,13 @@
 formatVersion: 1
 name: MOAD VCF-NSX
-version: 5
+version: 4
 inputs:
   frontendcount:
     title: 'No. of Frontend Workloads:'
     type: integer
     default: 1
     description: Load Balancer will be deployed <br> if Frontend Workload count <br> is >= 2
-  environment:
+  env:
     type: string
     description: Target Environment
     title: Target Environment
@@ -38,6 +38,58 @@ inputs:
     type: boolean
     title: Enable OS/APP Monitoring
     description: Installs the Telegraf Agent and monitors both MYSQL and Apache Apps
+  tagsOptional:
+    comment: |
+      # Tag Pattern: Only hyphens (-), underscores (_), lowercase characters, and 
+      # numbers are allowed. Keys must start with a lowercase character. Pattern is cloud agnostic 
+    encrypted: true
+    type: array
+    description: |-
+      <b> Enter tags that will be attached to the provisioned resources. </b> <br>
+      Allowed characters for cloud agnostic blueprints:  <br>
+      Only hyphens (-), underscores (_), lowercase characters, and numbers are allowed. <br>
+    title: Optional Tags
+    items:
+      type: object
+      properties:
+        key:
+          type: string
+          title: Key
+          description: Only hyphens (-), underscores (_), lowercase characters, and numbers are allowed.
+          pattern: ^[-a-z0-9\-\_]*$
+        value:
+          type: string
+          title: Value
+          description: Only hyphens (-), underscores (_), lowercase characters, and numbers are allowed.
+          pattern: ^[-a-z0-9\-\_]*$
+  tagsRequired:
+    comment: |
+      # Tag Pattern: Only hyphens (-), underscores (_), lowercase characters, and 
+      # numbers are allowed. Keys must start with a lowercase character. Pattern is cloud agnostic 
+    type: array
+    description: |-
+      <b> Required tags that will be attached to the provisioned resources. </b> <br>
+      Allowed characters for cloud agnostic blueprints:  <br>
+      Only hyphens (-), underscores (_), lowercase characters, and numbers are allowed. <br>
+    default:
+      - key: application
+        value: shopping_cart
+    title: Required Tags
+    pattern: null
+    items:
+      type: object
+      properties:
+        key:
+          type: string
+          title: Key
+          description: Only hyphens (-), underscores (_), lowercase characters, and numbers are allowed.
+          pattern: ^[-a-z0-9\-\_]*$
+        value:
+          type: string
+          title: Value
+          description: Only hyphens (-), underscores (_), lowercase characters, and numbers are allowed.
+          pattern: ^[-a-z0-9\-\_]*$
+    readOnly: true
 resources:
   OC-Apache-Cloud-Sec-Grp:
     type: Cloud.SecurityGroup
@@ -98,31 +150,25 @@ resources:
     dependsOn:
       - mysql
     properties:
-      osUsername: ${input.username}
-      osPassword: ${input.password}
-      #customizationSpec: moad
       agent: ${input.osMonitoring == true ? "telegraf" :""}
       service: apache
       name: oc-web
-      flavor: medium
+      flavor: small
       count: ${input.frontendcount}
       image: ubuntu-18.04
-      tags:
-        - key: project
-          value: ${env.projectName}
-        - key: cost_center
-          value: ${input.costCenter}
-        - key: application
-          value: moad
+      #imageRef: https://cloud-images.ubuntu.com/releases/18.04/release/ubuntu-18.04-server-cloudimg-amd64.ova
+      tags: ${input.tagsOptional + input.tagsRequired + [{'key':'cost_center','value':input.costCenter},{'key':'project','value':env.projectName}]}
+      remoteAccess:
+        authentication: usernamePassword
+        username: ${input.username}
+        password: ${input.password}
       networks:
-        - network: ${resource["OC-Web-Cloud-Seg"].id}
+        - network: ${resource.OC-Web-Cloud-Seg.id}
           assignment: static
           domain: showcase.tmm.broadcom.lab
           dns:
             - 10.138.241.1
             - 10.138.241.2
-          securityGroups:
-            - ${resource["OC-Apache-Cloud-Sec-Grp"].id}
       cloudConfig: |
         hostname: ${self.resourceName}
         package_upgrade: true
@@ -179,20 +225,14 @@ resources:
           - path: /etc/hosts
             content: |
               127.0.0.1 ${self.resourceName}
-              10.138.241.6 lvn-sc-www.showcase.tmm.broadcom.lab
-              10.138.216.173 lvn-m01-ops.showcase.tmm.broadcom.lab
-              10.138.216.130 lvn-m01-logs.showcase.tmm.broadcom.lab
             append: true
 
         runcmd:
-          - systemctl restart apache2
+          - systemctl stop apache2
           - USER=ocuser
           - PASS=${input.password}
-          - echo $USER:$PASS | /usr/sbin/chpasswd
-          - echo ${input.username}:$PASS | /usr/sbin/chpasswd
-          #- sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/g" /etc/ssh/sshd_config
-          #- service ssh reload
-          #- hostnamectl set-hostname ${self.resourceName}
+            #----------------------- Install Packages if not already installed  -------------------------#
+          #- systemctl list-units --type=service | grep apache2.service || apt-get install -y apache2 php php-mysql libapache2-mod-php php-cli php-common php-intl php-gd php-mbstring php-xml php-zip php-curl php-xmlrpc mysql-server-5.7 unzip open-vm-tools
           - wget -P /tmp/ http://lvn-sc-www.showcase.tmm.broadcom.lab/downloads/opencart-demo.zip
           - unzip -d /tmp /tmp/opencart-demo.zip
           - mv /tmp/opencart-demo-master/ /var/www/opencart
@@ -211,19 +251,18 @@ resources:
           - cd /etc/apache2/sites-available/
           - a2ensite opencart.conf
           - a2dissite 000-default.conf
-          - systemctl reload apache2
-          - systemctl restart apache2
+          #- systemctl reload apache2
+          #- systemctl restart apache2
           - echo "[client]" >> /etc/mysql/mysql.conf.d/mysqld.cnf
           - echo "user=ocuser" >> /etc/mysql/mysql.conf.d/mysqld.cnf
           - echo "password=$PASS" >> /etc/mysql/mysql.conf.d/mysqld.cnf
-
+          
             #----------------------- Set Website IP Address -----------------------#
-          - export cloudip=$(curl http://checkip.amazonaws.com/)
           - export onpremip=$(ip route get 8.8.8.8 | awk -F"src " 'NR==1{split($2,a," ");print a[1]}')
-          - export mysqlip=${resource.mysql.networks[0].address}
-          - export ip4=$onpremip
+          - mysqlip=${resource.mysql.networks[0].address}
+          - export ip4=${"$onpremip"}
             #----------------------------------------------------------------------#
-
+          
           - mysql -u $USER -h $mysqlip -e 'source /var/www/opencart/install/opencart.sql'
           - mysql -u $USER -h $mysqlip -e "INSERT INTO oc_user (user_id,user_group_id,username,password,salt,firstname,lastname,email,image,code,ip,status,date_added) VALUES (1,1,'admin','5feaa046f6927df3d744007ec1491dba838f672e','c4wnfrq9J','demo','user','admin@admin.com','none','none','none',1,'2019-01-31 06:29:09')" opencart
           - sed -i "s/frontendiphere/$ip4/g" /var/www/opencart/config.php
@@ -236,48 +275,39 @@ resources:
           - sed -i "s/passwordhere/$PASS/g" /var/www/opencart/admin/config.php
           - systemctl reload apache2
           - systemctl restart apache2
-
             #----------------------- Install Aria Logs Agent  -------------------------#
           - cd /tmp
           - wget http://lvn-sc-www.showcase.tmm.broadcom.lab/downloads/vmware-log-insight-agent_8.14.0-22552671_all.deb
           - dpkg -i vmware-log-insight-agent_8.14.0-22552671_all.deb
-          - export logs_ip=${input.environment == "env:vcf" ? "lvn-m01-logs.showcase.tmm.broadcom.lab" : "LOGINSIGHT"}
+          - export logs_ip=${input.env == "env:vcf" ? "lvn-m01-logs.showcase.tmm.broadcom.lab" : "LOGINSIGHT"}
           - sed -i "s/;hostname=OPERATIONS_FOR_LOGS/hostname=$logs_ip/g" /var/lib/loginsight-agent/liagent.ini
           - sed -i "s/;ssl=yes/ssl=no/g" /var/lib/loginsight-agent/liagent.ini
           - systemctl restart liagentd
           - systemctl enable liagentd
             #----------------------------------------------------------------------#
-
-          - echo "ocuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
           - echo 'Cloud-init is done!' >> /tmp/finished.txt
       constraints:
-        - tag: ${input.environment}
+        - tag: ${input.env}
   mysql:
     type: Cloud.vSphere.Machine
     properties:
-      osUsername: ${input.username}
-      osPassword: ${input.password}
       agent: ${input.osMonitoring == true ? "telegraf" :""}
       service: mysql
       name: oc-db
-      flavor: medium
+      flavor: small
       image: ubuntu-18.04
-      tags:
-        - key: project
-          value: ${env.projectName}
-        - key: cost_center
-          value: ${input.costCenter}
-        - key: application
-          value: moad
+      tags: ${input.tagsOptional + input.tagsRequired + [{'key':'cost_center','value':input.costCenter},{'key':'project','value':env.projectName}]}
+      remoteAccess:
+        authentication: usernamePassword
+        username: ${input.username}
+        password: ${input.password}
       networks:
-        - network: ${resource["OC-DB-Cloud-Seg"].id}
+        - network: ${resource.OC-DB-Cloud-Seg.id}
           assignment: static
           domain: showcase.tmm.broadcom.lab
           dns:
             - 10.138.241.1
             - 10.138.241.2
-          securityGroups:
-            - ${resource["OC-MySQL-Cloud-Sec-Grp"].id}
       cloudConfig: |
         hostname: ${self.resourceName}
         package_upgrade: true
@@ -324,9 +354,6 @@ resources:
           - path: /etc/hosts
             content: |
               127.0.0.1 ${self.resourceName}
-              10.138.241.6 lvn-sc-www.showcase.tmm.broadcom.lab
-              10.138.216.173 lvn-m01-ops.showcase.tmm.broadcom.lab
-              10.138.216.130 lvn-m01-logs.showcase.tmm.broadcom.lab
             append: true
 
         runcmd:
@@ -355,21 +382,19 @@ resources:
           - mysql -u root -e 'CREATE DATABASE opencart'
           - mysql -u root -e 'USE opencart'
           - mysql -u root -e 'flush privileges'
-
             #----------------------- Install Aria Logs Agent  -------------------------#
           - cd /tmp
           - wget http://lvn-sc-www.showcase.tmm.broadcom.lab/downloads/vmware-log-insight-agent_8.14.0-22552671_all.deb
           - dpkg -i vmware-log-insight-agent_8.14.0-22552671_all.deb
-          - export logs_ip=${input.environment == "env:vcf" ? "lvn-m01-logs.showcase.tmm.broadcom.lab" : "LOGINSIGHT"}
+          - export logs_ip=${input.env == "env:vcf" ? "lvn-m01-logs.showcase.tmm.broadcom.lab" : "LOGINSIGHT"}
           - sed -i "s/;hostname=OPERATIONS_FOR_LOGS/hostname=$logs_ip/g" /var/lib/loginsight-agent/liagent.ini
           - sed -i "s/;ssl=yes/ssl=no/g" /var/lib/loginsight-agent/liagent.ini
           - systemctl restart liagentd
           - systemctl enable liagentd
             #----------------------------------------------------------------------#
-
           - echo 'Cloud-init is done!' >> /tmp/finished.txt
       constraints:
-        - tag: ${input.environment}
+        - tag: ${input.env}
   OC-Web-Cloud-Seg:
     type: Cloud.NSX.Network
     properties:
