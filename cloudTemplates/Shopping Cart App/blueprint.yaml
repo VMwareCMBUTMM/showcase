@@ -1,7 +1,7 @@
 formatVersion: 1
 name: Shopping Cart App
 description: 2-Tier Shopping Cart App with Web and Database servers on NSX On-Demand Netowork Segments in Security Groups
-version: 1
+version: 2
 inputs:
   frontendcount:
     title: 'No. of Frontend Workloads:'
@@ -165,6 +165,8 @@ resources:
           dns:
             - 10.138.241.1
             - 10.138.241.2
+          securityGroups:
+            - ${resource["OC-Apache-Cloud-Sec-Grp"].id}
       cloudConfig: |
         hostname: ${self.resourceName}
         package_upgrade: true
@@ -300,6 +302,8 @@ resources:
           dns:
             - 10.138.241.1
             - 10.138.241.2
+          securityGroups:
+            - ${resource["OC-MySQL-Cloud-Sec-Grp"].id}
       cloudConfig: |
         hostname: ${self.resourceName}
         package_upgrade: true
@@ -453,6 +457,8 @@ resources:
           dns:
             - 10.138.241.1
             - 10.138.241.2
+          securityGroups:
+            - ${resource["OC-Apache-Cloud-Sec-Grp"].id}
   OC-Web-Cloud-Seg:
     type: Cloud.NSX.Network
     properties:
